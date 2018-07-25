@@ -4,6 +4,9 @@ import java.io.File;
 import java.io.IOException;
 import java.util.List;
 
+import org.hibernate.Session;
+import org.hibernate.SessionFactory;
+import org.hibernate.cfg.Configuration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,45 +22,61 @@ import com.tieto.tds.service.MailService;
 @RestController
 public class MainConroller {
 
-	private static final Logger log = LoggerFactory.getLogger(MainConroller.class);
+    private static final Logger log = LoggerFactory.getLogger(MainConroller.class);
 
-	private MailService mailService;
+    private MailService mailService;
 
-	@Autowired
-	public MainConroller(MailService mailService) {
-		this.mailService = mailService;
-	}
+    @Autowired
+    public MainConroller(MailService mailService) {
+        this.mailService = mailService;
+    }
 
-	@PostMapping("/send")
-	public void send(
-			@RequestParam("usertoken") String usertoken,
-			@RequestParam("sendTo") String sendTo,
-			@RequestParam("subject") String subject,
-			@RequestParam("content") String content,
-			@RequestParam(required = false, name="file") MultipartFile multipartFile,
-			@RequestParam(required = false, name="files") List<MultipartFile> multipartFiles) {
-		log.debug("{}, {}, {}, {}", usertoken, sendTo, subject, content);
-		MailMessageDto messageDto = new MailMessageDto();
-		messageDto.setUsertoken(usertoken);
-		messageDto.setSendTo(sendTo);
-		messageDto.setSubject(subject);
-		messageDto.setContent(content);
-		if (!multipartFile.isEmpty()){
-			System.out.println("File is present " + multipartFile.getOriginalFilename());
-			File convFile = new File( multipartFile.getOriginalFilename());
-			try {
-				multipartFile.transferTo(convFile);
-			} catch (IllegalStateException e) {
-				e.printStackTrace();
-			} catch (IOException e) {
-				e.printStackTrace();
-			}
-			messageDto.setFile(convFile);
+    @PostMapping("/send")
+    public void send(
+            @RequestParam("usertoken") String usertoken,
+            @RequestParam("sendTo") String sendTo,
+            @RequestParam("subject") String subject,
+            @RequestParam("content") String content,
+            @RequestParam(required = false, name = "file") MultipartFile multipartFile,
+            @RequestParam(required = false, name = "files") List<MultipartFile> multipartFiles) {
+        log.debug("{}, {}, {}, {}", usertoken, sendTo, subject, content);
+        MailMessageDto messageDto = new MailMessageDto();
+        messageDto.setUsertoken(usertoken);
+        messageDto.setSendTo(sendTo);
+        messageDto.setSubject(subject);
+        messageDto.setContent(content);
 
-			multipartFiles.forEach( file ->{
-				System.out.println(file.getOriginalFilename());
-			});
-			mailService.prepareAndSend(messageDto);
-		}
-	}
+        //        create session factory
+        SessionFactory factory = new Configuration().configure("hibernate.cfg.xml").addAnnotatedClass(MailMessageDto.class).buildSessionFactory();
+
+//        create session
+        Session session = factory.getCurrentSession();
+        try {
+            MailMessageDto hibernateMessageDto = new MailMessageDto(usertoken, sendTo, subject, content);
+            session.beginTransaction();
+            session.save(hibernateMessageDto);
+            session.getTransaction().commit();
+        } finally {
+            factory.close();
+        }
+
+
+        if (!multipartFile.isEmpty()) {
+            System.out.println("File is present " + multipartFile.getOriginalFilename());
+            File convFile = new File(multipartFile.getOriginalFilename());
+            try {
+                multipartFile.transferTo(convFile);
+            } catch (IllegalStateException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+            messageDto.setFile(convFile);
+
+            multipartFiles.forEach(file -> {
+                System.out.println(file.getOriginalFilename());
+            });
+            mailService.prepareAndSend(messageDto);
+        }
+    }
 }
